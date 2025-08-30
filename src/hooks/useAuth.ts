@@ -64,13 +64,24 @@ export function useAuth() {
     return { data, error };
   };
 
-  const signUp = async (email: string, password: string) => {
+const signUp = async (email: string, password: string) => {
+  try {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
     });
-    return { data, error };
-  };
+    
+    if (error) {
+      console.error('Signup error:', error);
+      return { data: null, error };
+    }
+    
+    return { data, error: null };
+  } catch (error) {
+    console.error('Unexpected error during signup:', error);
+    return { data: null, error: error as Error };
+  }
+};
 
   const signOut = async () => {
     // Update last_seen before signing out
