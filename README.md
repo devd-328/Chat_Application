@@ -1,5 +1,5 @@
 # RealTime Chat Application
-In progress there are some erros!!
+In progress there are some errors!!
 
 A comprehensive real-time chat application built with React, Node.js, Socket.IO, and Supabase.
 
