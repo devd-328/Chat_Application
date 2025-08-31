@@ -21,10 +21,18 @@ export function AuthForm() {
         : await signIn(email, password);
 
       if (error) {
-        setError(error.message);
+        setError(error.message || 'Authentication failed');
+      } else if (isSignUp) {
+        setError('');
+        // For signup, show success message
+        setError('Account created successfully! You can now sign in.');
+        setIsSignUp(false);
+        setEmail('');
+        setPassword('');
       }
     } catch (err) {
-      setError('An unexpected error occurred');
+      console.error('Auth error:', err);
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
