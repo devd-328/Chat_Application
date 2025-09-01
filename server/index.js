@@ -11,10 +11,15 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"]
+    origin: [
+      "http://localhost:5173",
+      "https://zany-doodle-6x7xxgwpx47f5x67-5173.app.github.dev"
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
+
 
 // Middleware
 app.use(cors());
@@ -182,6 +187,11 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'Server is running' });
 });
 
+// Add this route to avoid "Cannot GET /"
+app.get("/", (req, res) => {
+  res.send("Chat backend is running 🚀");
+});
+
 // Get available chat rooms
 app.get('/api/rooms', async (req, res) => {
   try {
@@ -191,11 +201,13 @@ app.get('/api/rooms', async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (error) {
+      console.error('Supabase error:', error);
       return res.status(500).json({ error: error.message });
     }
 
     res.json(rooms || []);
   } catch (error) {
+    console.error('Server error:', error);
     res.status(500).json({ error: 'Failed to fetch rooms' });
   }
 });
@@ -203,23 +215,38 @@ app.get('/api/rooms', async (req, res) => {
 // Create a new chat room
 app.post('/api/rooms', async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { name, description, created_by } = req.body;
     
+    // Validate required fields
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Room name is required' });
+    }
+
+    if (!created_by) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    console.log('Creating room with data:', { name, description, created_by });
+
     const { data: room, error } = await supabase
       .from('chat_rooms')
       .insert({
-        name,
-        description: description || ''
+        name: name.trim(),
+        description: description?.trim() || '',
+        created_by: created_by
       })
       .select()
       .single();
 
     if (error) {
+      console.error('Supabase error creating room:', error);
       return res.status(500).json({ error: error.message });
     }
 
-    res.json(room);
+    console.log('Room created successfully:', room);
+    res.status(201).json(room);
   } catch (error) {
+    console.error('Server error creating room:', error);
     res.status(500).json({ error: 'Failed to create room' });
   }
 });

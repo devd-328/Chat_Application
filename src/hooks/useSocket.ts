@@ -29,10 +29,28 @@ export function useSocket() {
   const [currentRoom, setCurrentRoom] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+  console.log("Auth user in useSocket:", user);
+  console.log("Backend URL:", import.meta.env.VITE_BACKEND_URL); // Add this line temporarily
+  console.log("Current window location:", window.location.origin); // Add this line
+  
+    if (!user) {
+      // If no user, ensure socket is disconnected and reset state
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      setConnected(false);
+      setMessages([]);
+      setConnectedUsers([]);
+      setTypingUsers(new Set());
+      setCurrentRoom(null);
+      return;
+    }
 
     // Initialize socket connection
-    socketRef.current = io('http://localhost:3001');
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+    socketRef.current = io(backendUrl);
+
     const socket = socketRef.current;
 
     socket.on('connect', () => {
@@ -76,8 +94,12 @@ export function useSocket() {
       console.error('Socket error:', error);
     });
 
+    // Cleanup function
     return () => {
-      socket.disconnect();
+      if (socket) {
+        socket.disconnect();
+      }
+      socketRef.current = null;
     };
   }, [user]);
 

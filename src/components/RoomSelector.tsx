@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { MessageCircle, Plus, Users, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 
 interface ChatRoom {
   id: string;
   name: string;
   description: string;
   created_at: string;
+  created_by?: string;
 }
 
 interface RoomSelectorProps {
@@ -14,12 +16,14 @@ interface RoomSelectorProps {
 }
 
 export function RoomSelector({ onRoomSelect }: RoomSelectorProps) {
+  const { user, session } = useAuth();
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDescription, setNewRoomDescription] = useState('');
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRooms();
@@ -34,46 +38,91 @@ export function RoomSelector({ onRoomSelect }: RoomSelectorProps) {
 
       if (error) {
         console.error('Error fetching rooms:', error);
+        setError('Failed to load rooms');
         return;
       }
 
       setRooms(rooms || []);
+      setError(null);
     } catch (error) {
       console.error('Error fetching rooms:', error);
+      setError('Failed to load rooms');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreateRoom = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newRoomName.trim()) return;
+const handleCreateRoom = async (e: React.FormEvent) => {
+  e.preventDefault();
+  
+  // Validation checks
+  if (!user || !session) {
+    setError('You must be logged in to create a room');
+    return;
+  }
 
-    setCreating(true);
-    try {
-      const response = await fetch('http://localhost:3001/api/rooms', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+  if (!newRoomName.trim()) {
+    setError('Room name is required');
+    return;
+  }
+
+  if (newRoomName.trim().length < 2) {
+    setError('Room name must be at least 2 characters long');
+    return;
+  }
+
+  setCreating(true);
+  setError(null);
+
+  try {
+    console.log('Creating room with user:', user.id, user.email);
+
+    const { data, error } = await supabase
+      .from('chat_rooms')
+      .insert([
+        {
           name: newRoomName.trim(),
-          description: newRoomDescription.trim(),
-        }),
-      });
+          description: newRoomDescription.trim() || null,
+          created_by: user.id,
+        }
+      ])
+      .select('*')
+      .single();
 
-      if (response.ok) {
-        setNewRoomName('');
-        setNewRoomDescription('');
-        setShowCreateForm(false);
-        await fetchRooms();
+    if (error) {
+      console.error('Supabase error creating room:', error);
+      
+      // Handle specific error types
+      if (error.code === 'PGRST116') {
+        setError('Room name already exists. Please choose a different name.');
+      } else if (error.code === '42501') {
+        setError('Permission denied. Please check your account permissions.');
+      } else if (error.message.includes('unique')) {
+        setError('Room name already exists. Please choose a different name.');
+      } else {
+        setError(`Failed to create room: ${error.message}`);
       }
-    } catch (error) {
-      console.error('Error creating room:', error);
-    } finally {
-      setCreating(false);
+      return;
     }
-  };
+
+    console.log('Room created successfully:', data);
+
+    // Success - reset form and refresh
+    setNewRoomName('');
+    setNewRoomDescription('');
+    setShowCreateForm(false);
+    setError(null);
+    
+    // Refresh the rooms list
+    await fetchRooms();
+
+  } catch (error) {
+    console.error('Unexpected error creating room:', error);
+    setError(error instanceof Error ? error.message : 'An unexpected error occurred while creating the room');
+  } finally {
+    setCreating(false);
+  }
+};
 
   if (loading) {
     return (
@@ -93,6 +142,18 @@ export function RoomSelector({ onRoomSelect }: RoomSelectorProps) {
           <h1 className="text-3xl font-bold text-gray-900">Select a Chat Room</h1>
           <p className="text-gray-600 mt-2">Choose a room to start chatting</p>
         </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 max-w-md mx-auto">
+            <p className="text-sm">{error}</p>
+            <button 
+              onClick={() => setError(null)}
+              className="text-red-600 hover:text-red-800 text-sm underline mt-1"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         <div className="mb-6 flex justify-center">
           <button
@@ -120,6 +181,7 @@ export function RoomSelector({ onRoomSelect }: RoomSelectorProps) {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter room name"
                   required
+                  disabled={creating}
                 />
               </div>
               <div>
@@ -130,16 +192,17 @@ export function RoomSelector({ onRoomSelect }: RoomSelectorProps) {
                   id="roomDescription"
                   value={newRoomDescription}
                   onChange={(e) => setNewRoomDescription(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   placeholder="Enter room description"
                   rows={3}
+                  disabled={creating}
                 />
               </div>
               <div className="flex space-x-3">
                 <button
                   type="submit"
-                  disabled={creating}
-                  className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
+                  disabled={creating || !newRoomName.trim()}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
                 >
                   {creating ? (
                     <>
@@ -152,8 +215,14 @@ export function RoomSelector({ onRoomSelect }: RoomSelectorProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowCreateForm(false)}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                  onClick={() => {
+                    setShowCreateForm(false);
+                    setNewRoomName('');
+                    setNewRoomDescription('');
+                    setError(null);
+                  }}
+                  disabled={creating}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800 disabled:text-gray-400 transition-colors"
                 >
                   Cancel
                 </button>
@@ -184,7 +253,7 @@ export function RoomSelector({ onRoomSelect }: RoomSelectorProps) {
           ))}
         </div>
 
-        {rooms.length === 0 && (
+        {rooms.length === 0 && !loading && (
           <div className="text-center py-12">
             <MessageCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-600 mb-2">No chat rooms yet</h3>
